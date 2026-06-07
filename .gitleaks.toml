@@ -1,12 +1,14 @@
 title = "go-public allowlist"
 
+# Allowlist only. Synthetic test sentinels are ignored; the production allowlist
+# should otherwise remain empty. Note: gitleaks `[[rules]]` blocks *detect* a
+# pattern, so the sentinel is expressed as an allowlist regex (not a rule) to
+# suppress it. gitleaks' built-in ruleset provides the actual detection.
 [allowlist]
 description = "Synthetic test sentinels only; production allowlist should remain empty."
 paths = [
   '''fixtures/''',
 ]
-
-[[rules]]
-id = "test-sentinel"
-description = "Allow synthetic test sentinel strings in fixtures"
-regex = '''sk-TEST-SENTINEL-.*'''
+regexes = [
+  '''sk-TEST-SENTINEL-.*''',
+]
