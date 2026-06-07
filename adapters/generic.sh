@@ -1,8 +1,4 @@
 #!/usr/bin/env bash
-detect() {
-  return 0
-}
-
 test() {
   if [[ -f Makefile ]] && grep -qE '^test:' Makefile; then
     make test

@@ -39,6 +39,27 @@ load_audit_policy() {
   while IFS= read -r item; do
     [[ -n "$item" ]] && PERSONAL_PATH_EXCLUDE_PATHS+=("$item")
   done < <(yaml_list_values personal_path_exclude_paths)
+  load_secret_policy
+}
+
+# Load secret detection patterns and the allowlist from .go-public.yaml,
+# falling back to the built-in defaults when the keys are absent.
+load_secret_policy() {
+  local item parts=()
+  while IFS= read -r item; do
+    [[ -n "$item" ]] && parts+=("$item")
+  done < <(yaml_list_values secret_patterns)
+  if [[ "${#parts[@]}" -gt 0 ]]; then
+    local IFS='|'
+    SECRET_PATTERN_REGEX="${parts[*]}"
+  fi
+  SECRET_ALLOWLIST_PATTERNS=()
+  while IFS= read -r item; do
+    [[ -n "$item" ]] && SECRET_ALLOWLIST_PATTERNS+=("$item")
+  done < <(yaml_list_values secret_allowlist)
+  if [[ "${#SECRET_ALLOWLIST_PATTERNS[@]}" -eq 0 ]]; then
+    SECRET_ALLOWLIST_PATTERNS=("sk-TEST-SENTINEL")
+  fi
 }
 
 is_excluded_path() {
@@ -66,11 +87,34 @@ git_grep_exclude_specs() {
 }
 
 is_allowlisted_secret() {
-  local match="$1"
-  if [[ "$match" =~ sk-TEST-SENTINEL ]]; then
-    return 0
-  fi
+  local match="$1" pat
+  for pat in "${SECRET_ALLOWLIST_PATTERNS[@]}"; do
+    [[ -n "$pat" ]] || continue
+    [[ "$match" =~ $pat ]] && return 0
+  done
   return 1
+}
+
+# Scan full git history for high-confidence secret patterns. Extra arguments are
+# passed to git grep as additional pathspecs (e.g. :(exclude) specs). Prints
+# non-allowlisted matches to stderr and returns 1 when any are found.
+scan_history_for_secrets() {
+  local grep_out blocked=0 line revs=()
+  grep_out="$(mktemp)"
+  mapfile -t revs < <(git rev-list --all 2>/dev/null || true)
+  if [[ "${#revs[@]}" -gt 0 ]] && \
+     git grep -I -n -E "$SECRET_PATTERN_REGEX" "${revs[@]}" -- . ':(exclude).git' "$@" >"$grep_out" 2>/dev/null; then
+    while IFS= read -r line; do
+      if is_allowlisted_secret "$line"; then
+        warn "Allowlisted test sentinel in history: $line"
+      else
+        printf '%s\n' "$line" >&2
+        blocked=1
+      fi
+    done < "$grep_out"
+  fi
+  rm -f "$grep_out"
+  return "$blocked"
 }
 
 run_gitleaks() {
@@ -137,30 +181,12 @@ audit_phase_1() {
   fi
 
   log "Scanning full git history for high-confidence secret patterns"
-  local patterns='ghp_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|BEGIN (RSA |EC |OPENSSH |)?PRIVATE KEY|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}'
-  local grep_out
-  grep_out="$(mktemp)"
-  local exclude_specs=() revs=()
+  local exclude_specs=()
   mapfile -t exclude_specs < <(git_grep_exclude_specs "${SECRET_GREP_EXCLUDE_PATHS[@]}")
-  mapfile -t revs < <(git rev-list --all 2>/dev/null || true)
-  if [[ "${#revs[@]}" -gt 0 ]] && git grep -I -n -E "$patterns" "${revs[@]}" -- . \
-      ':(exclude).git' \
-      "${exclude_specs[@]}" >"$grep_out" 2>/dev/null; then
-    local blocked=0
-    while IFS= read -r line; do
-      if is_allowlisted_secret "$line"; then
-        warn "Allowlisted test sentinel in history: $line"
-      else
-        printf '%s\n' "$line" >&2
-        blocked=1
-      fi
-    done < "$grep_out"
-    if [[ "$blocked" -eq 1 ]]; then
-      phase_add_blocker "1" "High-confidence secret-like patterns found in git history"
-      phase_failed=1
-    fi
+  if ! scan_history_for_secrets "${exclude_specs[@]}"; then
+    phase_add_blocker "1" "High-confidence secret-like patterns found in git history"
+    phase_failed=1
   fi
-  rm -f "$grep_out"
 
   log "Auditing tracked sensitive filenames"
   local sensitive_out
@@ -182,14 +208,13 @@ audit_phase_1() {
   done < <(yaml_list_values gitignore_required)
 
   log "Auditing example env files for production-like values"
-  local env_file
+  local env_file found
   while IFS= read -r env_file; do
     [[ -z "$env_file" || ! -f "$env_file" ]] && continue
-    if grep -Eiq 'ghp_|github_pat_|sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|BEGIN (RSA |EC |OPENSSH |)?PRIVATE KEY' "$env_file"; then
-      if ! is_allowlisted_secret "$(grep -Eio 'ghp_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}' "$env_file" | head -1 || true)"; then
-        phase_add_blocker "1" "Example env file contains production-like secret pattern: $env_file"
-        phase_failed=1
-      fi
+    found="$(grep -Eio "$SECRET_PATTERN_REGEX" "$env_file" | head -1 || true)"
+    if [[ -n "$found" ]] && ! is_allowlisted_secret "$found"; then
+      phase_add_blocker "1" "Example env file contains production-like secret pattern: $env_file"
+      phase_failed=1
     fi
   done < <(yaml_list_values example_env_files)
 

@@ -7,26 +7,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUTPUT="$ROOT/setup-go-public-skill.sh"
 
 # Operational files only — no fixtures/ or tests/ (dev harness).
-MANIFEST=(
-  ".cursor/skills/go-public/SKILL.md"
-  "scripts/go-public"
-  "scripts/go-public-lib/common.sh"
-  "scripts/go-public-lib/git.sh"
-  "scripts/go-public-lib/report.sh"
-  "scripts/go-public-lib/audit.sh"
-  "scripts/go-public-lib/docs.sh"
-  "scripts/go-public-lib/history.sh"
-  "scripts/go-public-lib/verify_clone.sh"
-  "adapters/generic.sh"
-  "adapters/go.sh"
-  "adapters/node.sh"
-  "adapters/python.sh"
-  "adapters/rust.sh"
-  ".go-public.yaml"
-  ".gitleaks.toml"
-  "LICENSE"
-  "README.md"
-)
+# Shared with tests/test_installer.sh via scripts/installer-manifest.txt.
+mapfile -t MANIFEST < "$ROOT/scripts/installer-manifest.txt"
 
 encode_file() {
   local path="$1"

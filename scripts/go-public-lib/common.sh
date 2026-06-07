@@ -8,13 +8,17 @@ TOOL_ROOT="$(cd "$LIB_DIR/../.." && pwd)"
 
 # Target repository under audit (override with GO_PUBLIC_ROOT)
 if [[ -n "${GO_PUBLIC_ROOT:-}" ]]; then
-  ROOT="$(cd "$GO_PUBLIC_ROOT" && pwd)"
+  PROJECT_ROOT="$(cd "$GO_PUBLIC_ROOT" && pwd)"
 else
-  ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+  PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 fi
-PROJECT_ROOT="$ROOT"
 ADAPTERS_DIR="${GO_PUBLIC_ADAPTERS_DIR:-$TOOL_ROOT/adapters}"
 CONFIG_FILE="${GO_PUBLIC_CONFIG:-$TOOL_ROOT/.go-public.yaml}"
+
+# High-confidence secret patterns and allowlist. These defaults are overridden
+# by .go-public.yaml (secret_patterns / secret_allowlist) via load_secret_policy.
+SECRET_PATTERN_REGEX='ghp_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|BEGIN (RSA |EC |OPENSSH |)?PRIVATE KEY|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}'
+SECRET_ALLOWLIST_PATTERNS=("sk-TEST-SENTINEL")
 
 # Defaults (overridden by config and CLI flags)
 DRY_RUN=1
@@ -22,11 +26,8 @@ APPLY=0
 APPLY_HISTORY=0
 PUBLISH=0
 CONFIRM=0
-INTERACTIVE=0
-SKIP_LIVE_E2E=0
 ALLOW_DIRTY=0
 HISTORY_STRATEGY="orphan"
-HISTORY_COMMITS="1"
 PUBLIC_BRANCH="public-main"
 TARGET_BRANCH="main"
 REPORT_PATH="go-public-report.json"
@@ -59,17 +60,14 @@ Options:
   --apply-history           Create local public branch (separate from --apply)
   --publish                 Enable publish path (requires --confirm)
   --confirm                 Confirm destructive publish push
-  --interactive             Interactive prompts where supported
   --allow-dirty             Allow dirty tree with warning
   --phase N                 Run only phase N (0-9)
   --from-phase N            Run from phase N through 9
-  --only LIST               Comma list: security,docs,history,...
-  --history-strategy STR    orphan|squash|keep
-  --history-commits N       Commits for squash strategy
+  --only LIST               Comma list of phase names: strategy,security,
+                            legal,hygiene,docs,ci,github,history,verify,post
+  --history-strategy STR    orphan|keep (squash deferred)
   --public-branch NAME      Local public branch name
   --target-branch NAME      Remote target branch
-  --new-repo                Flag for new-repo workflow
-  --skip-live-e2e           Skip maintainer live e2e scripts
   --report PATH             Report output path
   -h, --help                Show help
 USAGE
@@ -104,15 +102,11 @@ parse_args() {
       --apply-history) APPLY_HISTORY=1 ;;
       --publish) PUBLISH=1 ;;
       --confirm) CONFIRM=1 ;;
-      --interactive) INTERACTIVE=1 ;;
       --allow-dirty) ALLOW_DIRTY=1 ;;
-      --skip-live-e2e) SKIP_LIVE_E2E=1 ;;
-      --new-repo) NEW_REPO=1 ;;
       --phase) PHASE="${2:?missing phase}"; shift ;;
       --from-phase) FROM_PHASE="${2:?missing phase}"; shift ;;
       --only) ONLY="${2:?missing list}"; shift ;;
       --history-strategy) HISTORY_STRATEGY="${2:?missing strategy}"; shift ;;
-      --history-commits) HISTORY_COMMITS="${2:?missing count}"; shift ;;
       --public-branch) PUBLIC_BRANCH="${2:?missing branch}"; shift ;;
       --target-branch) TARGET_BRANCH="${2:?missing branch}"; shift ;;
       --report) REPORT_PATH="${2:?missing path}"; shift ;;
@@ -170,6 +164,21 @@ check_tools() {
   command -v git >/dev/null || die "git is required"
 }
 
+phase_name_for() {
+  case "$1" in
+    0) printf 'strategy' ;;
+    1) printf 'security' ;;
+    2) printf 'legal' ;;
+    3) printf 'hygiene' ;;
+    4) printf 'docs' ;;
+    5) printf 'ci' ;;
+    6) printf 'github' ;;
+    7) printf 'history' ;;
+    8) printf 'verify' ;;
+    9) printf 'post' ;;
+  esac
+}
+
 should_run_phase() {
   local n="$1"
   if [[ -n "$PHASE" && "$PHASE" != "$n" ]]; then
@@ -179,12 +188,10 @@ should_run_phase() {
     return 1
   fi
   if [[ -n "$ONLY" ]]; then
-    case "$ONLY" in
-      *security*) [[ "$n" == "1" ]] && return 0 ;;
-      *docs*) [[ "$n" == "4" ]] && return 0 ;;
-      *history*) [[ "$n" == "7" ]] && return 0 ;;
+    case ",$ONLY," in
+      *",$(phase_name_for "$n"),"*) return 0 ;;
+      *) return 1 ;;
     esac
-    return 1
   fi
   return 0
 }

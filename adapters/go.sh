@@ -1,8 +1,4 @@
 #!/usr/bin/env bash
-detect() {
-  [[ -f go.mod ]]
-}
-
 test() {
   go test ./...
 }

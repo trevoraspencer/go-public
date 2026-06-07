@@ -3,6 +3,7 @@
 
 run_verify_clone() {
   cd "$PROJECT_ROOT" || die "cannot cd to $PROJECT_ROOT"
+  load_secret_policy
   local tmp origin
   tmp="$(mktemp -d)"
   origin="$PROJECT_ROOT"
@@ -33,44 +34,16 @@ run_verify_clone() {
     fi
   done
 
-  if command -v gitleaks >/dev/null 2>&1; then
-    if [[ -f .gitleaks.toml ]]; then
-      gitleaks detect --source . --config .gitleaks.toml --redact || {
-        rm -rf "$tmp"
-        die "gitleaks failed on fresh clone"
-      }
-    else
-      gitleaks detect --source . --redact || {
-        rm -rf "$tmp"
-        die "gitleaks failed on fresh clone"
-      }
-    fi
-  else
-    warn "gitleaks not available during fresh-clone verification"
+  if ! run_gitleaks; then
+    rm -rf "$tmp"
+    die "gitleaks failed on fresh clone"
   fi
 
   log "Scanning public branch history for high-confidence secret patterns"
-  local patterns='ghp_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|BEGIN (RSA |EC |OPENSSH |)?PRIVATE KEY|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}'
-  local grep_out revs=()
-  grep_out="$(mktemp)"
-  mapfile -t revs < <(git rev-list --all 2>/dev/null || true)
-  if [[ "${#revs[@]}" -gt 0 ]] && git grep -I -n -E "$patterns" "${revs[@]}" -- . ':(exclude).git' >"$grep_out" 2>/dev/null; then
-    local blocked=0 line
-    while IFS= read -r line; do
-      if is_allowlisted_secret "$line"; then
-        warn "Allowlisted test sentinel in verify-clone history: $line"
-      else
-        printf '%s\n' "$line" >&2
-        blocked=1
-      fi
-    done < "$grep_out"
-    if [[ "$blocked" -eq 1 ]]; then
-      rm -f "$grep_out"
-      rm -rf "$tmp"
-      die "High-confidence secret-like patterns found in fresh-clone history"
-    fi
+  if ! scan_history_for_secrets; then
+    rm -rf "$tmp"
+    die "High-confidence secret-like patterns found in fresh-clone history"
   fi
-  rm -f "$grep_out"
 
   PROJECT_ROOT="$saved_root"
   export PROJECT_ROOT
