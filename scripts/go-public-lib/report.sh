@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # JSON report generation for go-public.
+# AUDIT_EXIT_CODE is consumed by audit.sh (run_audit_phases / run_preflight_phases).
+# shellcheck disable=SC2034
 
 REPORT_SCHEMA_VERSION="0.1"
 declare -A PHASE_STATUS=()

@@ -112,7 +112,7 @@ audit_phase_0() {
   log "Remote: ${remote:-none}"
   log "Tags: $tag_count"
   check_dirty_tree
-  cd "$PROJECT_ROOT"
+  cd "$PROJECT_ROOT" || die "cannot cd to $PROJECT_ROOT"
   if [[ -d .factory || -d .cursor/plans || -d notes || -d scratch ]]; then
     phase_add_warning "0" "Potential internal directories detected in working tree"
   fi
@@ -128,7 +128,7 @@ audit_phase_0() {
 audit_phase_1() {
   log "Phase 1: security and secrets audit"
   phase_init "1"
-  cd "$PROJECT_ROOT"
+  cd "$PROJECT_ROOT" || die "cannot cd to $PROJECT_ROOT"
   local phase_failed=0
 
   if ! run_gitleaks; then
@@ -142,6 +142,9 @@ audit_phase_1() {
   local exclude_specs=()
   mapfile -t exclude_specs < <(git_grep_exclude_specs "${SECRET_GREP_EXCLUDE_PATHS[@]}")
   : > "$grep_out"
+  # Word splitting on $(git rev-list --all) is intentional: each rev is a
+  # separate argument so git grep scans the full history.
+  # shellcheck disable=SC2046
   if git grep -I -n -E "$patterns" $(git rev-list --all) -- . \
       ':(exclude).git' \
       "${exclude_specs[@]}" >"$grep_out" 2>/dev/null; then
@@ -199,7 +202,7 @@ audit_phase_1() {
 audit_phase_2() {
   log "Phase 2: legal and licensing audit"
   phase_init "2"
-  cd "$PROJECT_ROOT"
+  cd "$PROJECT_ROOT" || die "cannot cd to $PROJECT_ROOT"
   if [[ ! -f LICENSE && ! -f LICENSE.md ]]; then
     phase_add_blocker "2" "Missing LICENSE"
     return 1
@@ -219,7 +222,7 @@ audit_phase_2() {
 audit_phase_3() {
   log "Phase 3: repository hygiene audit"
   phase_init "3"
-  cd "$PROJECT_ROOT"
+  cd "$PROJECT_ROOT" || die "cannot cd to $PROJECT_ROOT"
   local internal_regex='(^|/)(\.factory|\.cursor/plans|notes|scratch|tmp|TODO_private\.md|IMPLEMENTATION_PLAN\.md|LIVE_E2E_PLAN\.md)(/|$)'
   local internal_out="/tmp/go-public-internal-files.txt"
   if filtered_ls_files | grep -E "$internal_regex" >"$internal_out"; then
@@ -229,6 +232,7 @@ audit_phase_3() {
   fi
   local paths_out="/tmp/go-public-personal-paths.txt"
   : > "$paths_out"
+  # shellcheck disable=SC1003
   if git grep -I -n -E '/Users/|/home/[A-Za-z0-9._-]+|C:\\Users\\' -- . >"$paths_out" 2>/dev/null; then
     local blocked=0 line path
     while IFS= read -r line; do
@@ -280,7 +284,7 @@ audit_phase_3() {
 audit_phase_4() {
   log "Phase 4: public documentation audit"
   phase_init "4"
-  cd "$PROJECT_ROOT"
+  cd "$PROJECT_ROOT" || die "cannot cd to $PROJECT_ROOT"
   if [[ ! -f README.md ]]; then
     phase_add_blocker "4" "Missing README.md"
     return 1
@@ -337,7 +341,7 @@ audit_phase_4() {
 audit_phase_5() {
   log "Phase 5: code, module, and CI readiness"
   phase_init "5"
-  cd "$PROJECT_ROOT"
+  cd "$PROJECT_ROOT" || die "cannot cd to $PROJECT_ROOT"
   local stack
   for stack in $(detect_stacks); do
     if ! run_adapter_func "$stack" module_metadata_check; then

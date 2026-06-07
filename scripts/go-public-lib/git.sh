@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Git helpers for go-public.
+# REPORT_DIRTY_TREE is consumed by report.sh (finalize_report).
+# shellcheck disable=SC2034
 
 is_dirty() {
   [[ -n "$(git status --porcelain)" ]]

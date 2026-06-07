@@ -2,7 +2,7 @@
 # Fresh-clone verification (Phase 8).
 
 run_verify_clone() {
-  cd "$PROJECT_ROOT"
+  cd "$PROJECT_ROOT" || die "cannot cd to $PROJECT_ROOT"
   local tmp origin
   tmp="$(mktemp -d)"
   origin="$PROJECT_ROOT"
@@ -14,7 +14,7 @@ run_verify_clone() {
     die "verify-clone requires a git repository"
   fi
 
-  cd "$tmp/repo"
+  cd "$tmp/repo" || die "cannot cd to clone at $tmp/repo"
   local saved_root="$PROJECT_ROOT"
   PROJECT_ROOT="$tmp/repo"
   export PROJECT_ROOT
@@ -53,6 +53,9 @@ run_verify_clone() {
   local patterns='ghp_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|BEGIN (RSA |EC |OPENSSH |)?PRIVATE KEY|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}'
   local grep_out="/tmp/go-public-verify-secret-grep.txt"
   : > "$grep_out"
+  # Word splitting on $(git rev-list --all) is intentional: each rev is a
+  # separate argument so git grep scans the full history.
+  # shellcheck disable=SC2046
   if git grep -I -n -E "$patterns" $(git rev-list --all) -- . ':(exclude).git' >"$grep_out" 2>/dev/null; then
     local blocked=0 line
     while IFS= read -r line; do

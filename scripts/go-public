@@ -6,7 +6,8 @@ TOOL_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # Allow callers to target a different repo (fixtures, CI)
 if [[ -z "${GO_PUBLIC_ROOT:-}" ]]; then
-  export GO_PUBLIC_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+  GO_PUBLIC_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+  export GO_PUBLIC_ROOT
 fi
 cd "$GO_PUBLIC_ROOT"
 
