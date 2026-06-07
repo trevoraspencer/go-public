@@ -1,0 +1,103 @@
+strategy: orphan
+public_branch: public-main
+target_branch: main
+history:
+  backup_tag_prefix: private-archive
+  commit_message: Initial public release
+  allow_publish: false
+remove_paths:
+  - .factory/
+  - .cursor/plans/
+  - notes/
+  - scratch/
+  - tmp/
+  - docs/IMPLEMENTATION_PLAN.md
+  - docs/LIVE_E2E_PLAN.md
+  - TODO_private.md
+sensitive_path_patterns:
+  - ".env"
+  - ".env.*"
+  - "secrets.env"
+  - "*.pem"
+  - "*.key"
+  - "*.p12"
+  - "*.pfx"
+  - "*.log"
+  - "id_rsa"
+  - "id_ed25519"
+gitignore_required:
+  - ".env"
+  - ".env.*"
+  - "!.env.example"
+  - "!.env.*.example"
+  - "secrets.env"
+  - "*.pem"
+  - "*.key"
+  - "*.p12"
+  - "*.pfx"
+  - "*.log"
+  - ".factory/"
+  - ".cursor/plans/"
+  - "notes/"
+  - "scratch/"
+  - "tmp/"
+secret_patterns:
+  high_confidence:
+    - "ghp_[A-Za-z0-9_]{20,}"
+    - "github_pat_[A-Za-z0-9_]{20,}"
+    - "sk-[A-Za-z0-9_-]{20,}"
+    - "AKIA[0-9A-Z]{16}"
+    - "BEGIN (RSA |EC |OPENSSH |)?PRIVATE KEY"
+    - "eyJ[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}"
+allowlist_gitleaks:
+  test_sentinels:
+    - pattern: "sk-TEST-SENTINEL-.*"
+      reason: "Synthetic test fixture used to verify redaction guards."
+  production:
+    - pattern: ""
+      reason: "Production allowlist should normally remain empty."
+donor_denylist:
+  - SomePrivateDonorName
+  - InternalCodename
+personal_path_patterns:
+  - "/Users/"
+  - "/home/"
+  - "C:\\\\Users\\\\"
+example_env_files:
+  - .env.example
+  - .env.local.example
+maintainer_scripts:
+  - scripts/live-e2e/
+docs:
+  require_readme_sections:
+    - install
+    - configuration
+    - usage
+    - security
+    - license
+  reject_placeholders:
+    - "<this-repo>"
+    - "YOUR_ORG"
+    - "OWNER/REPO"
+    - "TODO_PUBLIC"
+    - "CHANGE_ME"
+github:
+  emit_settings_checklist: true
+  mutate_visibility: false
+audit_exclude_paths:
+  - fixtures/
+secret_grep_exclude_paths:
+  - fixtures/
+  - scripts/go-public-lib/
+  - .go-public.yaml
+  - .cursor/
+  - .gitleaks.toml
+  - tests/
+placeholder_exclude_paths:
+  - fixtures/
+  - .go-public.yaml
+  - .cursor/
+personal_path_exclude_paths:
+  - fixtures/
+  - .go-public.yaml
+  - scripts/go-public-lib/

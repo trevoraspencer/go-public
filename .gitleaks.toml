@@ -1,0 +1,12 @@
+title = "go-public allowlist"
+
+[allowlist]
+description = "Synthetic test sentinels only; production allowlist should remain empty."
+paths = [
+  '''fixtures/''',
+]
+
+[[rules]]
+id = "test-sentinel"
+description = "Allow synthetic test sentinel strings in fixtures"
+regex = '''sk-TEST-SENTINEL-.*'''
