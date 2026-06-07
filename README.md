@@ -4,6 +4,26 @@ Portable tooling and a Cursor skill for converting a private repository into a p
 
 The **skill** (`.cursor/skills/go-public/SKILL.md`) gives agents workflow discipline and judgment. The **script** (`scripts/go-public`) owns repeatable gates, dry-runs, reports, and CI-usable checks.
 
+## Install into an empty repo
+
+Drop `setup-go-public-skill.sh` into the repo root and run:
+
+```bash
+bash setup-go-public-skill.sh
+git add -A && git commit -m "Add go-public skill"
+```
+
+The installer embeds all operational files as base64 (byte-identical to this repo's sources). It sets `+x` on `scripts/go-public` and touches nothing else — no git, remote, or network. Portable on Linux (`base64 -d`) and macOS (`base64 -D`).
+
+**Handoff vs installer:** `docs/HANDOFF.md` is context for a fresh agent chat (design, safety, where you left off). The installer writes the actual files. Use both when bootstrapping: run the installer for repo contents, paste the handoff when continuing in a new session.
+
+To regenerate the installer after editing sources:
+
+```bash
+scripts/build-installer.sh
+tests/test_installer.sh
+```
+
 ## Quick start
 
 ```bash

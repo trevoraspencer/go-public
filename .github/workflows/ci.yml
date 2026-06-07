@@ -15,5 +15,7 @@ jobs:
           go-version: '1.22'
       - name: Run fixture tests
         run: tests/test_go_public_audit.sh
+      - name: Verify installer reproduces sources byte-identically
+        run: tests/test_installer.sh
       - name: Self audit (expect pass on tool repo)
         run: scripts/go-public audit --dry-run --report go-public-report.json

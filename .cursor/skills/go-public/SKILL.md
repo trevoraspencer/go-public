@@ -337,3 +337,23 @@ GO_PUBLIC_ROOT=/path/to/target-repo scripts/go-public audit --dry-run
 ```
 
 Adapters and policy load from the tool root; the target repo is specified via `GO_PUBLIC_ROOT`.
+
+## Distribution
+
+Two artifacts serve different jobs:
+
+| Artifact | Purpose |
+|----------|---------|
+| `docs/HANDOFF.md` | Context for a fresh agent chat — architecture, safety, resume point |
+| `setup-go-public-skill.sh` | Self-contained installer that writes skill + CLI files into a repo |
+
+Bootstrap an empty repo:
+
+```bash
+bash setup-go-public-skill.sh
+git add -A && git commit -m "Add go-public skill"
+```
+
+The installer is base64-embedded for byte-perfect fidelity (no heredoc or quoting collisions). It performs no git, remote, or network operations. Regenerate after source changes with `scripts/build-installer.sh`; verify with `tests/test_installer.sh`.
+
+Do not paste the installer into chat — copy the file. Truncated installers fail silently and are worse than none.
