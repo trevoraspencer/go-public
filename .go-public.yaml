@@ -86,6 +86,7 @@ github:
   mutate_visibility: false
 audit_exclude_paths:
   - fixtures/
+  - .go-public.yaml
 secret_grep_exclude_paths:
   - fixtures/
   - scripts/go-public-lib/
@@ -101,3 +102,5 @@ personal_path_exclude_paths:
   - fixtures/
   - .go-public.yaml
   - scripts/go-public-lib/
+  - .cursor/
+  - README.md

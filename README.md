@@ -61,6 +61,11 @@ tests/                            # Meta-test harness
 - **Never** force-pushes without `publish --confirm`.
 - **Always** scans full git history, not only the working tree.
 - **Always** creates a backup tag before history rewrite.
+- **Separate permissions:** `--apply` (safe edits), `--apply-history` (local branch), `publish --confirm` (remote push).
+
+## Report schema
+
+`go-public-report.json` uses `schema_version: "0.1"` with per-phase `status`, `blockers`, `warnings`, `manual_steps`, and `evidence`. `ready_to_publish` is only true when phases 0–8 have no blockers.
 
 ## Testing
 

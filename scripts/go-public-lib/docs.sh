@@ -14,6 +14,12 @@ ensure_public_release_doc() {
 
 Selected strategy: $HISTORY_STRATEGY
 
+Rationale:
+
+- Private history may contain internal development artifacts.
+- Public users benefit from a clean baseline when private WIP commits are not valuable.
+- A single initial public commit provides a clear public launch point when using orphan strategy.
+
 This repository is being prepared for public release.
 
 ## Manual decisions
@@ -64,6 +70,23 @@ apply_gitignore_rules() {
 run_fix() {
   [[ "$APPLY" -eq 1 ]] || die "fix requires --apply"
   log "Applying safe remediations"
-  ensure_public_release_doc
-  apply_gitignore_rules
+  if [[ -z "${PHASE:-}" ]]; then
+    ensure_public_release_doc
+    apply_gitignore_rules
+    return
+  fi
+  case "$PHASE" in
+    0)
+      ensure_public_release_doc
+      ;;
+    1|3)
+      apply_gitignore_rules
+      ;;
+    4)
+      ensure_public_release_doc
+      ;;
+    *)
+      die "fix --phase supports 0, 1, 3, 4, or omit for all safe remediations"
+      ;;
+  esac
 }

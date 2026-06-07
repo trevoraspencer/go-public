@@ -16,6 +16,101 @@ The goal is to produce a repository that is safe, hygienic, documented for stran
 
 **The skill is not the source of truth.** It tells the agent how to reason and sequence work. **`scripts/go-public` owns the gates.**
 
+## Architecture
+
+```
+.cursor/skills/go-public/SKILL.md   # Agent workflow and safety rules
+scripts/go-public                   # CLI orchestrator
+scripts/go-public-lib/              # Phase logic, report, git helpers
+adapters/                           # Stack-specific test/license hooks (generic, go, node, python, rust)
+.go-public.yaml                     # Policy configuration
+.gitleaks.toml                      # Secret scan allowlists
+fixtures/                           # Test repositories
+tests/                              # Meta-test harness
+```
+
+## Command model
+
+```bash
+scripts/go-public audit
+scripts/go-public fix
+scripts/go-public preflight
+scripts/go-public history --dry-run
+scripts/go-public history --apply-history
+scripts/go-public verify-clone
+scripts/go-public report
+scripts/go-public publish --confirm
+```
+
+Global flags:
+
+| Flag | Purpose |
+|------|---------|
+| `--dry-run` | Default: read-only mode |
+| `--apply` | Safe file mutations only |
+| `--apply-history` | Local branch/tag history construction (separate from `--apply`) |
+| `--publish --confirm` | Only allowed publish path |
+| `--phase 0-9` | Run a single phase |
+| `--from-phase N` | Run from phase N through 9 |
+| `--only security,docs` | Filter phases |
+| `--history-strategy orphan\|squash\|keep` | History rewrite strategy |
+| `--allow-dirty` | Continue with warning when tree is dirty |
+| `--report path` | JSON report output path |
+
+## Phase decision tree
+
+```
+Start
+  |
+  v
+Is git tree clean?
+  |-- no --> stop unless --allow-dirty, report warning
+  |
+  v
+Detect stack(s)
+  |
+  v
+Phase 0: choose history strategy
+  |-- secrets ever likely exposed? internal history messy? --> orphan recommended
+  |-- clean intentional history? --> keep allowed
+  |-- wants multiple public commits? --> squash N (deferred in v1)
+  |
+  v
+Phase 1: full-history secret audit
+  |-- findings outside documented allowlist --> blocker
+  |
+  v
+Phase 2: legal/license audit
+  |-- missing LICENSE or incompatible deps --> blocker/manual review
+  |
+  v
+Phase 3: hygiene cleanup
+  |-- internal files remain tracked --> blocker
+  |
+  v
+Phase 4: docs stranger-readiness
+  |-- README quickstart incomplete/broken links/placeholders --> blocker/warning
+  |
+  v
+Phase 5: stack tests + CI
+  |-- build/test/lint fail --> blocker
+  |
+  v
+Phase 6: GitHub settings checklist
+  |-- never mutate visibility automatically
+  |
+  v
+Phase 7: public history creation
+  |-- dry-run by default; APPLY_HISTORY creates local public branch + backup tag
+  |
+  v
+Phase 8: fresh clone verification
+  |-- clone/test/smoke/gitleaks fail --> blocker
+  |
+  v
+Phase 9: post-public checklist
+```
+
 ## Trigger phrases
 
 - "go public"
@@ -50,81 +145,132 @@ Recommend orphan when:
 - Internal docs, prompts, logs, or agent artifacts were committed.
 - Secrets may have touched the repository at any point.
 - The user wants a clean public launch.
+- The repo is being positioned as a first public release.
 
 Allow **keep** only when full history has been audited, no private material exists in history, commit history is valuable, and the user explicitly wants provenance.
 
 Allow **squash** when the user wants a small number of thematic commits and source history is mostly clean (squash is deferred in v1 — use orphan or keep).
 
+## Status model
+
+Each phase returns: `pass`, `warn`, `block`, `skip`, or `manual`.
+
+`ready_to_publish` may only become true when:
+
+- Phases 0–8 have no blockers
+- Phase 1 full-history scan passed
+- Fresh-clone verification passed (run `verify-clone`, not audit alone)
+- Backup tag exists if history rewrite is planned
+- Manual checklist is emitted, not silently assumed complete
+
 ## Required workflow
 
 Run phases in order. Each phase must produce report output and must not silently skip blockers.
 
-### Phase 0: Release strategy
+### Phase 0: Release strategy (advisory, not mutating)
 
 Goals: detect repo shape, recommend history strategy, record decision, prepare dry-run history tooling.
+
+Checks: current branch, remote URL, commit/author counts, dirty tree, existing tags, internal directories (`.factory/`, `.cursor/plans/`, `notes/`, `scratch/`), large blobs, whether remote may already be public.
 
 Deliverables: `docs/PUBLIC_RELEASE.md`, `scripts/go-public history --dry-run`, report phase 0.
 
 Gate: strategy recorded, dirty tree warning emitted, no destructive action.
 
-### Phase 1: Security and secrets (blocking)
+### Phase 1: Security and secrets (blocking — hardest gate)
+
+A secret finding is a blocker unless it is a documented synthetic test sentinel. Do not allow vague "probably fine" handling.
 
 Required checks:
 
 - `gitleaks detect --source .` (with `.gitleaks.toml` if present)
 - Full-history grep for high-confidence patterns (`ghp_`, `github_pat_`, `sk-`, `AKIA`, private keys, JWT-like blobs)
 - `git ls-files` sensitive filename audit
-- `.gitignore` coverage audit
+- `.gitignore` coverage audit against `.go-public.yaml` `gitignore_required`
+- Example env files contain placeholders only (not production-like values)
 
-Allowlist policy: test sentinels only (e.g. `sk-TEST-SENTINEL-*`); production allowlist normally empty.
+Allowlist policy: test sentinels only (e.g. `sk-TEST-SENTINEL-*`); production allowlist normally empty; every allowlist entry must include a reason.
 
-Manual reminders: rotate all credentials; revoke uncertain tokens; never claim rotation is complete.
+Manual reminders: rotate all credentials; revoke uncertain OAuth tokens, PATs, deploy keys, cloud keys, and webhook secrets; never claim rotation is complete.
 
 ### Phase 2: Legal and licensing
+
+Distinguish blockers from manual review:
+
+- Missing LICENSE: blocker
+- GPL dependency in distributed binary: blocker/manual review
+- Missing SECURITY.md: warning
+- Unknown copied code provenance: blocker until documented
 
 Gate: LICENSE exists; dependency license audit has no unresolved blockers; manual legal checklist emitted.
 
 ### Phase 3: Repository hygiene
 
-Remove internal artifacts (`.factory/`, `.cursor/plans/`, `notes/`, `scratch/`, private plans). Block on personal paths and donor denylist terms.
+Remove internal artifacts and add prevention guards (`.gitignore`, donor denylist scans, personal path scans).
+
+Block on: tracked internal paths, personal paths (`/Users/`, `/home/`, `C:\Users\`), donor denylist terms from `.go-public.yaml`.
+
+Deliverables: cleanup diff, guard rules, report phase 3.
 
 ### Phase 4: Public documentation
 
-README must be stranger-readable: install, configuration, usage, security, license. Block on unresolved placeholders (`<this-repo>`, `YOUR_ORG`, `CHANGE_ME`).
+Test docs like code. README requirements:
+
+- One-line project description
+- Status (alpha, beta, stable, experimental)
+- Requirements, install, configuration, usage
+- Verification or health check
+- Security model
+- License and contributing pointer
+- No unresolved placeholders (`<this-repo>`, `YOUR_ORG`, `OWNER/REPO`, `CHANGE_ME`)
+
+Deliverables: `README.md`, `CONTRIBUTING.md`, `CHANGELOG.md` (as applicable), report phase 4.
 
 ### Phase 5: Code, module, and CI readiness
 
-Run stack adapters for test/lint/metadata. Warn if CI missing; block on test/metadata failures.
+Run stack adapters for test/lint/metadata. Stack checks:
+
+- **Go**: `go test`, `go vet`, optional staticcheck, module path matches public import path
+- **Node**: package manager test/lint, `private: true` warning, repository metadata
+- **Python**: pytest/ruff if configured, pyproject metadata
+- **Rust**: `cargo test`, `cargo clippy`, `cargo fmt --check`
+
+Warn if CI missing; block on test/metadata failures. Default CI should be minimal — do not invent heavy CI.
 
 ### Phase 6: GitHub settings checklist (manual)
 
-Emit checklist only. Never mutate visibility.
+Emit checklist only. Never mutate visibility. Cover: description/topics, secret scanning, Dependabot, branch protection, required CI, issue/PR templates.
 
 ### Phase 7: Create public history (destructive-adjacent)
 
+Separate permissions: `--apply` (safe edits), `--apply-history` (local branch), `--publish --confirm` (remote push).
+
 - Dry-run by default
-- `--apply-history` creates backup tag + local public branch
-- `--publish --confirm` pushes (separate from `--apply`)
+- `--apply-history` creates backup tag `private-archive/YYYYMMDD-HHMMSS` + local public branch
+- Orphan strategy must produce exactly one commit
+- `--publish --confirm` pushes backup tag first, then public branch
 
 ### Phase 8: Fresh-clone verification
 
-Run `scripts/go-public verify-clone`. Gate: clone builds/tests; gitleaks passes; README quickstart viable.
+Run `scripts/go-public verify-clone`. Simulates a stranger cloning the public branch: install, build/test, gitleaks, history secret scan.
+
+Gate: clone builds/tests; gitleaks passes; README quickstart viable.
 
 ### Phase 9: Post-public checklist (manual)
 
-Emit checklist for tagging, release notes, issue triage, security reports.
-
-## Status model
-
-Each phase returns: `pass`, `warn`, `block`, `skip`, or `manual`.
-
-`ready_to_publish` may only become true when phases 0–8 have no blockers, Phase 1 full-history scan passed, fresh-clone verification passed, backup tag exists if history rewrite is planned, and manual checklist is emitted.
+Emit checklist for tagging, release notes, issue triage, security reports, dependency alerts.
 
 ## Agent behavior rules
 
 1. Start with `scripts/go-public audit --dry-run`.
 2. Do not edit files until the audit report identifies what should change.
-3. Prefer small phase-specific branches (`cursor/phase1-security-secrets`, etc.).
+3. Prefer small phase-specific branches:
+   - `cursor/phase0-public-release-strategy`
+   - `cursor/phase1-security-secrets`
+   - `cursor/phase2-legal-licensing`
+   - `cursor/phase3-artifact-cleanup`
+   - `cursor/phase4-public-docs`
+   - `cursor/phase5-ci-readiness`
 4. After each phase, run the relevant gate command.
 5. Keep changes idempotent.
 6. Never remove ambiguous files without reviewing whether they are user-facing.
@@ -139,12 +285,13 @@ Each phase returns: `pass`, `warn`, `block`, `skip`, or `manual`.
 # Initial assessment
 scripts/go-public audit --dry-run --report go-public-report.json
 
-# Security preflight
+# Security preflight (phases 0–1)
 scripts/go-public preflight --dry-run
 
 # Apply safe fixes
 scripts/go-public fix --apply --phase 1
 scripts/go-public fix --apply --phase 3
+scripts/go-public fix --apply --phase 4
 
 # Preview history rewrite
 scripts/go-public history --dry-run --history-strategy orphan
@@ -174,6 +321,12 @@ The repository is only public-ready when:
 - Fresh-clone verification passes
 - Manual steps are clearly listed
 - `ready_to_publish` in the report is `true`
+
+## v1 scope
+
+**Must have:** audit, fix, preflight, history dry-run/apply-history, verify-clone, JSON report, generic/go/node/python/rust adapters, fixture tests.
+
+**Defer:** GitHub API mutation, automatic issue labels, automatic release creation, full SPDX dependency graph, multi-commit squash, advanced README command replay.
 
 ## Targeting another repository
 

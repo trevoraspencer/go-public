@@ -49,6 +49,26 @@ run_verify_clone() {
     warn "gitleaks not available during fresh-clone verification"
   fi
 
+  log "Scanning public branch history for high-confidence secret patterns"
+  local patterns='ghp_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|BEGIN (RSA |EC |OPENSSH |)?PRIVATE KEY|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}'
+  local grep_out="/tmp/go-public-verify-secret-grep.txt"
+  : > "$grep_out"
+  if git grep -I -n -E "$patterns" $(git rev-list --all) -- . ':(exclude).git' >"$grep_out" 2>/dev/null; then
+    local blocked=0 line
+    while IFS= read -r line; do
+      if is_allowlisted_secret "$line"; then
+        warn "Allowlisted test sentinel in verify-clone history: $line"
+      else
+        printf '%s\n' "$line" >&2
+        blocked=1
+      fi
+    done < "$grep_out"
+    if [[ "$blocked" -eq 1 ]]; then
+      rm -rf "$tmp"
+      die "High-confidence secret-like patterns found in fresh-clone history"
+    fi
+  fi
+
   PROJECT_ROOT="$saved_root"
   export PROJECT_ROOT
   rm -rf "$tmp"
