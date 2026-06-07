@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TOOL_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Allow callers to target a different repo (fixtures, CI)
+if [[ -z "${GO_PUBLIC_ROOT:-}" ]]; then
+  export GO_PUBLIC_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+fi
+cd "$GO_PUBLIC_ROOT"
+
+# shellcheck source=scripts/go-public-lib/common.sh
+source "$SCRIPT_DIR/go-public-lib/common.sh"
+# shellcheck source=scripts/go-public-lib/git.sh
+source "$SCRIPT_DIR/go-public-lib/git.sh"
+# shellcheck source=scripts/go-public-lib/report.sh
+source "$SCRIPT_DIR/go-public-lib/report.sh"
+# shellcheck source=scripts/go-public-lib/audit.sh
+source "$SCRIPT_DIR/go-public-lib/audit.sh"
+# shellcheck source=scripts/go-public-lib/docs.sh
+source "$SCRIPT_DIR/go-public-lib/docs.sh"
+# shellcheck source=scripts/go-public-lib/history.sh
+source "$SCRIPT_DIR/go-public-lib/history.sh"
+# shellcheck source=scripts/go-public-lib/verify_clone.sh
+source "$SCRIPT_DIR/go-public-lib/verify_clone.sh"
+
+parse_args "$@"
+
+main() {
+  require_git_repo
+  check_tools
+
+  case "$COMMAND" in
+    audit)
+      run_audit_phases
+      ;;
+    preflight)
+      run_preflight_phases
+      ;;
+    fix)
+      run_fix
+      ;;
+    history)
+      run_history
+      ;;
+    verify-clone)
+      run_verify_clone
+      ;;
+    report)
+      write_report_stub
+      finalize_report
+      log "Report regenerated: $REPORT_PATH"
+      ;;
+    publish)
+      run_publish
+      ;;
+    *)
+      usage
+      die "Unknown command: $COMMAND"
+      ;;
+  esac
+}
+
+main

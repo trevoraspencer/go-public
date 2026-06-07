@@ -1,0 +1,9 @@
+go-public-report.json
+.go-public/
+
+# OS
+.DS_Store
+
+# Editor
+*.swp
+*.swo
