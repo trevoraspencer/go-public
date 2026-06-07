@@ -86,21 +86,41 @@ run_gitleaks() {
   fi
 }
 
+check_remote_may_be_public() {
+  local remote owner repo
+  remote="$(remote_url)"
+  [[ "$remote" =~ github\.com[:/]([^/]+)/([^/.]+) ]] || return 0
+  owner="${BASH_REMATCH[1]}"
+  repo="${BASH_REMATCH[2]%.git}"
+  if command -v curl >/dev/null 2>&1; then
+    if curl -fsS --max-time 5 "https://api.github.com/repos/${owner}/${repo}" 2>/dev/null | grep -q '"private": false'; then
+      phase_add_warning "0" "Remote repository may already be public: ${owner}/${repo}"
+    fi
+  fi
+}
+
 audit_phase_0() {
   log "Phase 0: release strategy audit"
   phase_init "0"
-  local commits authors remote
+  local commits authors remote tag_count
   commits="$(commit_count)"
   authors="$(author_count)"
   remote="$(remote_url)"
+  tag_count="$(git tag -l 2>/dev/null | wc -l | tr -d ' ')"
   log "Commits: $commits"
   log "Authors: $authors"
   log "Remote: ${remote:-none}"
+  log "Tags: $tag_count"
   check_dirty_tree
   cd "$PROJECT_ROOT"
   if [[ -d .factory || -d .cursor/plans || -d notes || -d scratch ]]; then
     phase_add_warning "0" "Potential internal directories detected in working tree"
   fi
+  if git show-ref --verify --quiet refs/heads/public-main 2>/dev/null || \
+     git show-ref --verify --quiet refs/heads/public-release 2>/dev/null; then
+    phase_add_warning "0" "Existing public release branch detected"
+  fi
+  check_remote_may_be_public
   log "Recommended strategy: $HISTORY_STRATEGY"
   phase_set_status "0" "pass"
 }
@@ -147,6 +167,27 @@ audit_phase_1() {
     phase_add_blocker "1" "Sensitive-looking files are tracked"
     phase_failed=1
   fi
+
+  log "Auditing .gitignore coverage"
+  local rule
+  while IFS= read -r rule; do
+    [[ -z "$rule" ]] && continue
+    if [[ ! -f .gitignore ]] || ! grep -Fxq "$rule" .gitignore; then
+      phase_add_warning "1" ".gitignore missing recommended rule: $rule"
+    fi
+  done < <(yaml_list_values gitignore_required)
+
+  log "Auditing example env files for production-like values"
+  local env_file
+  while IFS= read -r env_file; do
+    [[ -z "$env_file" || ! -f "$env_file" ]] && continue
+    if grep -Eiq 'ghp_|github_pat_|sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|BEGIN (RSA |EC |OPENSSH |)?PRIVATE KEY' "$env_file"; then
+      if ! is_allowlisted_secret "$(grep -Eio 'ghp_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}' "$env_file" | head -1 || true)"; then
+        phase_add_blocker "1" "Example env file contains production-like secret pattern: $env_file"
+        phase_failed=1
+      fi
+    fi
+  done < <(yaml_list_values example_env_files)
 
   if [[ "$phase_failed" -eq 0 ]]; then
     log "Phase 1 passed"
@@ -203,6 +244,30 @@ audit_phase_3() {
       return 1
     fi
   fi
+  log "Auditing donor denylist terms"
+  local term donor_out="/tmp/go-public-donor-denylist.txt"
+  : > "$donor_out"
+  while IFS= read -r term; do
+    [[ -z "$term" ]] && continue
+    if git grep -I -n -F "$term" -- . >>"$donor_out" 2>/dev/null; then
+      :
+    fi
+  done < <(yaml_list_values donor_denylist)
+  if [[ -s "$donor_out" ]]; then
+    local blocked=0 line path
+    while IFS= read -r line; do
+      path="${line%%:*}"
+      if is_excluded_path "$path" "${AUDIT_EXCLUDE_PATHS[@]}"; then
+        continue
+      fi
+      printf '%s\n' "$line" >&2
+      blocked=1
+    done < "$donor_out"
+    if [[ "$blocked" -eq 1 ]]; then
+      phase_add_blocker "3" "Donor denylist term found in tracked content"
+      return 1
+    fi
+  fi
   log "Large blobs in history, top 20:"
   git rev-list --objects --all 2>/dev/null |
     git cat-file --batch-check='%(objecttype) %(objectname) %(objectsize) %(rest)' 2>/dev/null |
@@ -228,6 +293,7 @@ audit_phase_4() {
     "install"
     "configuration|config"
     "usage|run"
+    "security"
     "license"
   )
   local term
@@ -238,7 +304,7 @@ audit_phase_4() {
   done
   local placeholder_out="/tmp/go-public-placeholders.txt"
   : > "$placeholder_out"
-  if git grep -I -n -E '<this-repo>|YOUR_ORG|TODO_PUBLIC|INSERT_|CHANGE_ME' -- \
+  if git grep -I -n -E '<this-repo>|YOUR_ORG|OWNER/REPO|TODO_PUBLIC|INSERT_|CHANGE_ME' -- \
       '*.md' '*.yaml' '*.yml' '*.json' >"$placeholder_out" 2>/dev/null; then
     local blocked=0 line path
     while IFS= read -r line; do

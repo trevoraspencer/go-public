@@ -69,6 +69,14 @@ write_report_stub() {
   REPORT_DETECTED_STACKS="$(detect_stacks | tr '\n' ',' | sed 's/,$//')"
 }
 
+report_output_path() {
+  if [[ "$REPORT_PATH" == /* ]]; then
+    printf '%s' "$REPORT_PATH"
+  else
+    printf '%s/%s' "$PROJECT_ROOT" "$REPORT_PATH"
+  fi
+}
+
 finalize_report() {
   local ready="false"
   local has_blocker=0
@@ -128,7 +136,7 @@ finalize_report() {
     printf '    "scripts/go-public publish --confirm --public-branch %s --target-branch %s"\n' "$PUBLIC_BRANCH" "$TARGET_BRANCH"
     printf '  ]\n'
     printf '}\n'
-  } > "$PROJECT_ROOT/$REPORT_PATH"
+  } > "$(report_output_path)"
   log "Report written: $REPORT_PATH"
 }
 
@@ -139,8 +147,53 @@ write_phase_json() {
   printf '      "name": "%s",\n' "${names[$n]}"
   printf '      "status": "%s",\n' "${PHASE_STATUS[$n]:-pass}"
   printf '      "blockers": [%s],\n' "$(phase_blockers_json "$n")"
-  printf '      "warnings": [%s]\n' "$(phase_warnings_json "$n")"
+  printf '      "warnings": [%s],\n' "$(phase_warnings_json "$n")"
+  write_phase_manual_steps "$n"
+  write_phase_evidence "$n"
   printf '    }'
+}
+
+write_phase_manual_steps() {
+  local n="$1"
+  printf '      "manual_steps": ['
+  case "$n" in
+    0)
+      printf '\n        "Confirm orphan strategy.",\n        "Confirm existing repo rewrite versus new public repo."\n      ]'
+      ;;
+    1)
+      printf '\n        "Rotate all credentials that ever touched the repo."\n      ]'
+      ;;
+    6|9)
+      printf '\n        "Complete emitted checklist in .go-public/notes.md."\n      ]'
+      ;;
+    8)
+      printf '\n        "Run scripts/go-public verify-clone to complete this gate."\n      ]'
+      ;;
+    *)
+      printf ']'
+      ;;
+  esac
+  printf ',\n'
+}
+
+write_phase_evidence() {
+  local n="$1"
+  printf '      "evidence": {'
+  case "$n" in
+    0)
+      printf '\n        "commit_count": %s,\n        "author_count": %s,\n        "tag_count": %s\n      }' \
+        "$(commit_count)" "$(author_count)" "$(git tag -l 2>/dev/null | wc -l | tr -d ' ')"
+      ;;
+    1)
+      local gitleaks_ran="false"
+      command -v gitleaks >/dev/null 2>&1 && gitleaks_ran="true"
+      printf '\n        "gitleaks_ran": %s,\n        "history_scan_ran": true,\n        "tracked_sensitive_file_audit_ran": true,\n        "gitignore_coverage_audit_ran": true\n      }' \
+        "$gitleaks_ran"
+      ;;
+    *)
+      printf '}'
+      ;;
+  esac
 }
 
 phase_blockers_json() {
