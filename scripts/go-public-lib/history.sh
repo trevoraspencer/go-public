@@ -2,7 +2,7 @@
 # Public history creation (Phase 7).
 
 run_history() {
-  cd "$PROJECT_ROOT"
+  cd "$PROJECT_ROOT" || die "cannot cd to $PROJECT_ROOT"
   load_audit_policy
   audit_phase_0 || true
   if [[ "${PHASE_STATUS[1]:-}" != "pass" ]]; then
@@ -60,8 +60,12 @@ run_history() {
 }
 
 run_publish() {
-  [[ "$PUBLISH" -eq 1 && "$CONFIRM" -eq 1 ]] || die "publish requires --publish --confirm"
-  cd "$PROJECT_ROOT"
+  # The `publish` subcommand is itself the explicit publish path; `--confirm`
+  # is the required safety gate. `--publish` is accepted as an optional alias so
+  # that both documented forms (`publish --confirm` and `publish --publish
+  # --confirm`) work.
+  [[ "$CONFIRM" -eq 1 ]] || die "publish requires --confirm"
+  cd "$PROJECT_ROOT" || die "cannot cd to $PROJECT_ROOT"
   load_audit_policy
   [[ "$(git branch --show-current)" == "$PUBLIC_BRANCH" ]] || die "Checkout $PUBLIC_BRANCH before publishing"
 

@@ -1,6 +1,25 @@
 go-public-report.json
 .go-public/
 
+# Secrets and credentials
+.env
+.env.*
+!.env.example
+!.env.*.example
+secrets.env
+*.pem
+*.key
+*.p12
+*.pfx
+*.log
+
+# Internal / working artifacts
+.factory/
+.cursor/plans/
+notes/
+scratch/
+tmp/
+
 # OS
 .DS_Store
 

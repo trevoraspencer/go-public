@@ -7,7 +7,7 @@ trap 'rm -rf "$TMP"' EXIT
 
 copy_fixture() {
   local name="$1"
-  rm -rf "$TMP/$name"
+  rm -rf "${TMP:?}/$name"
   cp -R "$ROOT/fixtures/$name" "$TMP/$name"
   cd "$TMP/$name"
   git init -q

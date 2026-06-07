@@ -131,7 +131,7 @@ append_markdown_note() {
 
 detect_stacks() {
   local stacks=()
-  cd "$PROJECT_ROOT"
+  cd "$PROJECT_ROOT" || die "cannot cd to $PROJECT_ROOT"
   [[ -f go.mod ]] && stacks+=("go")
   [[ -f package.json ]] && stacks+=("node")
   [[ -f pyproject.toml || -f requirements.txt || -f setup.py ]] && stacks+=("python")
@@ -183,6 +183,6 @@ should_run_phase() {
 }
 
 require_git_repo() {
-  cd "$PROJECT_ROOT"
+  cd "$PROJECT_ROOT" || die "cannot cd to $PROJECT_ROOT"
   git rev-parse --is-inside-work-tree >/dev/null 2>&1 || die "Not inside a git repository"
 }
