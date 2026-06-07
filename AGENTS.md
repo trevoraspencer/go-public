@@ -1,25 +1,47 @@
----
-name: go-public
-description: >-
-  Convert a private, messy repository into a public-ready open-source release.
-  Use when the user says "go public", "open source this", "make this repo public",
-  "orphan branch release", "clean this repo for GitHub public", or similar.
----
+# go-public — agent workflow
 
-# Go Public Skill
+This is the **canonical, agent-agnostic** guide for the go-public tooling. It tells a
+coding agent how to reason about and sequence work when turning a private repository
+into a public-ready open-source release. Every common coding agent is wired to read
+this file (see [Supported agents](#supported-agents)).
+
+**This guide is not the source of truth for gates.** It tells the agent how to reason
+and sequence work. **`scripts/go-public` owns the gates, dry-runs, and reports.**
+
+## Supported agents
+
+go-public is portable across coding agents. The canonical workflow lives here, in
+`AGENTS.md`, which is read natively by most agents. Agents that use a different
+convention get a thin pointer file that defers to this one — so there is a single
+source of truth and no drift.
+
+| Agent | Entry point | Mechanism |
+|-------|-------------|-----------|
+| Codex | `AGENTS.md` | Native `AGENTS.md` support |
+| Cursor | `.cursor/rules/go-public.mdc` → `AGENTS.md` | Project rule (also reads `AGENTS.md`) |
+| Factory Droid | `AGENTS.md` | Native `AGENTS.md` support |
+| Grok build | `AGENTS.md` | Native `AGENTS.md` support |
+| Claude Code | `CLAUDE.md` + `.claude/skills/go-public/SKILL.md` → `AGENTS.md` | Memory file + Agent Skill |
+
+Adding another agent means adding one pointer file that references this guide — never
+forking the workflow.
 
 ## Purpose
 
-Use this skill when converting a private, messy repository into a public-ready open-source repository, usually published as a single clean commit using an orphan-branch strategy.
+Use this workflow when converting a private, messy repository into a public-ready
+open-source repository, usually published as a single clean commit using an
+orphan-branch strategy.
 
-The goal is to produce a repository that is safe, hygienic, documented for strangers, legally reviewable, CI-verified, and ready for explicit human-controlled publication.
-
-**The skill is not the source of truth.** It tells the agent how to reason and sequence work. **`scripts/go-public` owns the gates.**
+The goal is to produce a repository that is safe, hygienic, documented for strangers,
+legally reviewable, CI-verified, and ready for explicit human-controlled publication.
 
 ## Architecture
 
 ```
-.cursor/skills/go-public/SKILL.md   # Agent workflow and safety rules
+AGENTS.md                           # Canonical agent workflow and safety rules (this file)
+CLAUDE.md                           # Claude Code pointer to AGENTS.md
+.claude/skills/go-public/SKILL.md   # Claude Code Agent Skill (defers to AGENTS.md)
+.cursor/rules/go-public.mdc         # Cursor project rule (defers to AGENTS.md)
 scripts/go-public                   # CLI orchestrator
 scripts/go-public-lib/              # Phase logic, report, git helpers
 adapters/                           # Stack-specific test/license hooks (generic, go, node, python, rust)
@@ -210,6 +232,8 @@ Remove internal artifacts and add prevention guards (`.gitignore`, donor denylis
 
 Block on: tracked internal paths, personal paths (`/Users/`, `/home/`, `C:\Users\`), donor denylist terms from `.go-public.yaml`.
 
+Internal artifacts include agent scratch and plan directories from any tool (e.g. `.factory/`, `.cursor/plans/`, `notes/`, `scratch/`, `tmp/`). Committed agent **configuration** that is meant to ship (such as `AGENTS.md`, `CLAUDE.md`, `.claude/skills/`, `.cursor/rules/`) is not an internal artifact.
+
 Deliverables: cleanup diff, guard rules, report phase 3.
 
 ### Phase 4: Public documentation
@@ -265,12 +289,12 @@ Emit checklist for tagging, release notes, issue triage, security reports, depen
 1. Start with `scripts/go-public audit --dry-run`.
 2. Do not edit files until the audit report identifies what should change.
 3. Prefer small phase-specific branches:
-   - `cursor/phase0-public-release-strategy`
-   - `cursor/phase1-security-secrets`
-   - `cursor/phase2-legal-licensing`
-   - `cursor/phase3-artifact-cleanup`
-   - `cursor/phase4-public-docs`
-   - `cursor/phase5-ci-readiness`
+   - `go-public/phase0-public-release-strategy`
+   - `go-public/phase1-security-secrets`
+   - `go-public/phase2-legal-licensing`
+   - `go-public/phase3-artifact-cleanup`
+   - `go-public/phase4-public-docs`
+   - `go-public/phase5-ci-readiness`
 4. After each phase, run the relevant gate command.
 5. Keep changes idempotent.
 6. Never remove ambiguous files without reviewing whether they are user-facing.
@@ -345,13 +369,13 @@ Two artifacts serve different jobs:
 | Artifact | Purpose |
 |----------|---------|
 | `docs/HANDOFF.md` | Context for a fresh agent chat — architecture, safety, resume point |
-| `setup-go-public-skill.sh` | Self-contained installer that writes skill + CLI files into a repo |
+| `setup-go-public-skill.sh` | Self-contained installer that writes the agent guides + CLI files into a repo |
 
 Bootstrap an empty repo:
 
 ```bash
 bash setup-go-public-skill.sh
-git add -A && git commit -m "Add go-public skill"
+git add -A && git commit -m "Add go-public tooling"
 ```
 
 The installer is base64-embedded for byte-perfect fidelity (no heredoc or quoting collisions). It performs no git, remote, or network operations. Regenerate after source changes with `scripts/build-installer.sh`; verify with `tests/test_installer.sh`.

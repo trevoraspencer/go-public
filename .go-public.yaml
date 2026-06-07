@@ -54,16 +54,25 @@ secret_grep_exclude_paths:
   - fixtures/
   - scripts/go-public-lib/
   - .go-public.yaml
+  - AGENTS.md
+  - CLAUDE.md
+  - .claude/
   - .cursor/
   - .gitleaks.toml
   - tests/
 placeholder_exclude_paths:
   - fixtures/
   - .go-public.yaml
+  - AGENTS.md
+  - CLAUDE.md
+  - .claude/
   - .cursor/
 personal_path_exclude_paths:
   - fixtures/
   - .go-public.yaml
   - scripts/go-public-lib/
+  - AGENTS.md
+  - CLAUDE.md
+  - .claude/
   - .cursor/
   - README.md

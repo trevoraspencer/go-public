@@ -1,12 +1,12 @@
 # Agent context handoff
 
-Paste this into a **fresh agent chat** when you need design context or want to continue go-public work. It is **not** a substitute for the skill files themselves.
+Paste this into a **fresh agent chat** when you need design context or want to continue go-public work. It is **not** a substitute for the agent guide (`AGENTS.md`) itself.
 
 For an empty repo, use the installer instead:
 
 ```bash
 bash setup-go-public-skill.sh
-git add -A && git commit -m "Add go-public skill"
+git add -A && git commit -m "Add go-public tooling"
 ```
 
 ## Two different jobs
@@ -14,18 +14,18 @@ git add -A && git commit -m "Add go-public skill"
 | Artifact | Purpose |
 |----------|---------|
 | **This handoff** (`docs/HANDOFF.md`) | Brief a new agent on architecture, safety rules, and where you left off |
-| **Installer** (`setup-go-public-skill.sh`) | Write the actual skill + CLI files into a repo (byte-identical, no network) |
+| **Installer** (`setup-go-public-skill.sh`) | Write the actual agent guides + CLI files into a repo (byte-identical, no network) |
 
 Do not paste the installer into chat — copy the file. Large base64 blocks truncate easily; a truncated installer is worse than none.
 
 ## Architecture (30-second version)
 
-- **Skill** (`.cursor/skills/go-public/SKILL.md`) — agent workflow, judgment, phase sequencing
+- **Agent guide** (`AGENTS.md`) — canonical, agent-agnostic workflow, judgment, phase sequencing. Read natively by Codex, Cursor, Factory Droid, and Grok build; Claude Code reaches it via `CLAUDE.md` and `.claude/skills/go-public/SKILL.md`; Cursor via `.cursor/rules/go-public.mdc`. Every per-agent file is a thin pointer, so there is one source of truth and no drift.
 - **CLI** (`scripts/go-public`) — repeatable gates, dry-runs, JSON report, CI checks
 - **Adapters** (`adapters/`) — stack-specific test/license hooks (generic, go, node, python, rust)
 - **Policy** (`.go-public.yaml`, `.gitleaks.toml`) — denylist, gitignore requirements, allowlists
 
-The skill is not the source of truth for gates. The script is.
+The agent guide is not the source of truth for gates. The script is.
 
 ## Safety rules (non-negotiable)
 
@@ -68,7 +68,7 @@ When resuming work, tell the agent:
 
 ## Regenerating the installer
 
-After changing skill or script files:
+After changing the agent guides or script files:
 
 ```bash
 scripts/build-installer.sh
