@@ -1,8 +1,4 @@
 #!/usr/bin/env bash
-detect() {
-  [[ -f pyproject.toml || -f requirements.txt || -f setup.py ]]
-}
-
 test() {
   if command -v pytest >/dev/null 2>&1; then
     pytest

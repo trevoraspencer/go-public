@@ -80,24 +80,12 @@ report_output_path() {
 }
 
 finalize_report() {
-  local ready="false"
-  local has_blocker=0
+  # Manual steps always remain; ready_to_publish is true only when none of
+  # phases 0-8 have a blocker.
+  local ready="true"
   for i in $(seq 0 8); do
-    if [[ "${PHASE_STATUS[$i]:-pass}" == "block" ]]; then
-      has_blocker=1
-      break
-    fi
+    [[ "${PHASE_STATUS[$i]:-pass}" == "block" ]] && ready="false"
   done
-  if [[ "$has_blocker" -eq 0 && "${PHASE_STATUS[1]:-block}" != "block" ]]; then
-    # Manual steps always remain; ready only when phases 0-8 pass/warn/manual without blockers
-    local all_clear=1
-    for i in $(seq 0 8); do
-      case "${PHASE_STATUS[$i]:-pass}" in
-        block) all_clear=0 ;;
-      esac
-    done
-    [[ "$all_clear" -eq 1 ]] && ready="true"
-  fi
 
   local repo_name remote
   remote="$(remote_url)"
@@ -148,8 +136,8 @@ write_phase_json() {
   printf '    "%s": {\n' "$n"
   printf '      "name": "%s",\n' "${names[$n]}"
   printf '      "status": "%s",\n' "${PHASE_STATUS[$n]:-pass}"
-  printf '      "blockers": [%s],\n' "$(phase_blockers_json "$n")"
-  printf '      "warnings": [%s],\n' "$(phase_warnings_json "$n")"
+  printf '      "blockers": [%s],\n' "$(phase_items_json "${PHASE_BLOCKERS[$n]:-}")"
+  printf '      "warnings": [%s],\n' "$(phase_items_json "${PHASE_WARNINGS[$n]:-}")"
   write_phase_manual_steps "$n"
   write_phase_evidence "$n"
   printf '    }'
@@ -198,25 +186,10 @@ write_phase_evidence() {
   esac
 }
 
-phase_blockers_json() {
-  local n="$1"
-  local data="${PHASE_BLOCKERS[$n]:-}"
-  [[ -z "$data" ]] && return
-  local IFS='|'
-  local items=()
-  read -ra items <<< "$data"
-  local out=""
-  for item in "${items[@]}"; do
-    [[ -z "$item" ]] && continue
-    [[ -n "$out" ]] && out+=", "
-    out+="\"$(json_escape "$item")\""
-  done
-  printf '%s' "$out"
-}
-
-phase_warnings_json() {
-  local n="$1"
-  local data="${PHASE_WARNINGS[$n]:-}"
+# Render a '|'-delimited message list (PHASE_BLOCKERS / PHASE_WARNINGS entry) as
+# a comma-separated list of JSON strings.
+phase_items_json() {
+  local data="$1"
   [[ -z "$data" ]] && return
   local IFS='|'
   local items=()

@@ -5,26 +5,8 @@ INSTALLER="$ROOT/setup-go-public-skill.sh"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-MANIFEST=(
-  ".cursor/skills/go-public/SKILL.md"
-  "scripts/go-public"
-  "scripts/go-public-lib/common.sh"
-  "scripts/go-public-lib/git.sh"
-  "scripts/go-public-lib/report.sh"
-  "scripts/go-public-lib/audit.sh"
-  "scripts/go-public-lib/docs.sh"
-  "scripts/go-public-lib/history.sh"
-  "scripts/go-public-lib/verify_clone.sh"
-  "adapters/generic.sh"
-  "adapters/go.sh"
-  "adapters/node.sh"
-  "adapters/python.sh"
-  "adapters/rust.sh"
-  ".go-public.yaml"
-  ".gitleaks.toml"
-  "LICENSE"
-  "README.md"
-)
+# Shared with scripts/build-installer.sh via scripts/installer-manifest.txt.
+mapfile -t MANIFEST < "$ROOT/scripts/installer-manifest.txt"
 
 echo "== test_installer_byte_identical =="
 bash "$INSTALLER" "$TMP"

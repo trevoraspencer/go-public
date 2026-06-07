@@ -1,8 +1,4 @@
 #!/usr/bin/env bash
-detect() {
-  [[ -f Cargo.toml ]]
-}
-
 test() {
   cargo test
 }

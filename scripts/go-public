@@ -2,7 +2,6 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TOOL_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # Allow callers to target a different repo (fixtures, CI)
 if [[ -z "${GO_PUBLIC_ROOT:-}" ]]; then

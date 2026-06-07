@@ -1,8 +1,4 @@
 #!/usr/bin/env bash
-detect() {
-  [[ -f package.json ]]
-}
-
 node_pm() {
   if [[ -f pnpm-lock.yaml ]]; then
     echo pnpm
