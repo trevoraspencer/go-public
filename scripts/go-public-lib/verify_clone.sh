@@ -51,12 +51,10 @@ run_verify_clone() {
 
   log "Scanning public branch history for high-confidence secret patterns"
   local patterns='ghp_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|BEGIN (RSA |EC |OPENSSH |)?PRIVATE KEY|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}'
-  local grep_out="/tmp/go-public-verify-secret-grep.txt"
-  : > "$grep_out"
-  # Word splitting on $(git rev-list --all) is intentional: each rev is a
-  # separate argument so git grep scans the full history.
-  # shellcheck disable=SC2046
-  if git grep -I -n -E "$patterns" $(git rev-list --all) -- . ':(exclude).git' >"$grep_out" 2>/dev/null; then
+  local grep_out revs=()
+  grep_out="$(mktemp)"
+  mapfile -t revs < <(git rev-list --all 2>/dev/null || true)
+  if [[ "${#revs[@]}" -gt 0 ]] && git grep -I -n -E "$patterns" "${revs[@]}" -- . ':(exclude).git' >"$grep_out" 2>/dev/null; then
     local blocked=0 line
     while IFS= read -r line; do
       if is_allowlisted_secret "$line"; then
@@ -67,10 +65,12 @@ run_verify_clone() {
       fi
     done < "$grep_out"
     if [[ "$blocked" -eq 1 ]]; then
+      rm -f "$grep_out"
       rm -rf "$tmp"
       die "High-confidence secret-like patterns found in fresh-clone history"
     fi
   fi
+  rm -f "$grep_out"
 
   PROJECT_ROOT="$saved_root"
   export PROJECT_ROOT

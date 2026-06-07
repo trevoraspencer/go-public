@@ -93,6 +93,10 @@ parse_args() {
   COMMAND="${1:-audit}"
   [[ $# -gt 0 ]] && shift
 
+  # Load repository policy before parsing flags so explicit CLI options always
+  # take precedence over defaults from .go-public.yaml.
+  load_config
+
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --dry-run) DRY_RUN=1; APPLY=0 ;;
@@ -117,7 +121,6 @@ parse_args() {
     esac
     shift
   done
-  load_config
 }
 
 phase_status_dir() {
@@ -149,14 +152,18 @@ run_adapter_func() {
   if [[ ! -f "$adapter" ]]; then
     adapter="$ADAPTERS_DIR/generic.sh"
   fi
-  # shellcheck source=/dev/null
-  source "$adapter"
-  if declare -F "$func" >/dev/null 2>&1; then
-    "$func"
-  else
-    warn "Adapter $adapter does not implement $func"
-    return 0
-  fi
+  (
+    # Source adapters in a subshell so function definitions from one stack do
+    # not leak into later adapter invocations.
+    # shellcheck source=/dev/null
+    source "$adapter"
+    if declare -F "$func" >/dev/null 2>&1; then
+      "$func"
+    else
+      warn "Adapter $adapter does not implement $func"
+      return 0
+    fi
+  )
 }
 
 check_tools() {

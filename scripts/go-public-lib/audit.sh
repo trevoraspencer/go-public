@@ -138,14 +138,12 @@ audit_phase_1() {
 
   log "Scanning full git history for high-confidence secret patterns"
   local patterns='ghp_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|BEGIN (RSA |EC |OPENSSH |)?PRIVATE KEY|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}'
-  local grep_out="/tmp/go-public-secret-grep.txt"
-  local exclude_specs=()
+  local grep_out
+  grep_out="$(mktemp)"
+  local exclude_specs=() revs=()
   mapfile -t exclude_specs < <(git_grep_exclude_specs "${SECRET_GREP_EXCLUDE_PATHS[@]}")
-  : > "$grep_out"
-  # Word splitting on $(git rev-list --all) is intentional: each rev is a
-  # separate argument so git grep scans the full history.
-  # shellcheck disable=SC2046
-  if git grep -I -n -E "$patterns" $(git rev-list --all) -- . \
+  mapfile -t revs < <(git rev-list --all 2>/dev/null || true)
+  if [[ "${#revs[@]}" -gt 0 ]] && git grep -I -n -E "$patterns" "${revs[@]}" -- . \
       ':(exclude).git' \
       "${exclude_specs[@]}" >"$grep_out" 2>/dev/null; then
     local blocked=0
@@ -162,14 +160,17 @@ audit_phase_1() {
       phase_failed=1
     fi
   fi
+  rm -f "$grep_out"
 
   log "Auditing tracked sensitive filenames"
-  local sensitive_out="/tmp/go-public-sensitive-files.txt"
+  local sensitive_out
+  sensitive_out="$(mktemp)"
   if filtered_ls_files | grep -Ei '(^|/)(\.env|secrets\.env|id_rsa|id_ed25519|.*\.pem|.*\.key|.*\.p12|.*\.pfx|.*\.log)$' >"$sensitive_out"; then
     cat "$sensitive_out" >&2
     phase_add_blocker "1" "Sensitive-looking files are tracked"
     phase_failed=1
   fi
+  rm -f "$sensitive_out"
 
   log "Auditing .gitignore coverage"
   local rule
@@ -224,14 +225,17 @@ audit_phase_3() {
   phase_init "3"
   cd "$PROJECT_ROOT" || die "cannot cd to $PROJECT_ROOT"
   local internal_regex='(^|/)(\.factory|\.cursor/plans|notes|scratch|tmp|TODO_private\.md|IMPLEMENTATION_PLAN\.md|LIVE_E2E_PLAN\.md)(/|$)'
-  local internal_out="/tmp/go-public-internal-files.txt"
+  local internal_out
+  internal_out="$(mktemp)"
   if filtered_ls_files | grep -E "$internal_regex" >"$internal_out"; then
     cat "$internal_out" >&2
+    rm -f "$internal_out"
     phase_add_blocker "3" "Internal artifacts remain tracked"
     return 1
   fi
-  local paths_out="/tmp/go-public-personal-paths.txt"
-  : > "$paths_out"
+  rm -f "$internal_out"
+  local paths_out
+  paths_out="$(mktemp)"
   # shellcheck disable=SC1003
   if git grep -I -n -E '/Users/|/home/[A-Za-z0-9._-]+|C:\\Users\\' -- . >"$paths_out" 2>/dev/null; then
     local blocked=0 line path
@@ -244,13 +248,15 @@ audit_phase_3() {
       blocked=1
     done < "$paths_out"
     if [[ "$blocked" -eq 1 ]]; then
+      rm -f "$paths_out"
       phase_add_blocker "3" "Personal or machine-specific paths found"
       return 1
     fi
   fi
+  rm -f "$paths_out"
   log "Auditing donor denylist terms"
-  local term donor_out="/tmp/go-public-donor-denylist.txt"
-  : > "$donor_out"
+  local term donor_out
+  donor_out="$(mktemp)"
   while IFS= read -r term; do
     [[ -z "$term" ]] && continue
     if git grep -I -n -F "$term" -- . >>"$donor_out" 2>/dev/null; then
@@ -268,10 +274,12 @@ audit_phase_3() {
       blocked=1
     done < "$donor_out"
     if [[ "$blocked" -eq 1 ]]; then
+      rm -f "$donor_out"
       phase_add_blocker "3" "Donor denylist term found in tracked content"
       return 1
     fi
   fi
+  rm -f "$donor_out"
   log "Large blobs in history, top 20:"
   git rev-list --objects --all 2>/dev/null |
     git cat-file --batch-check='%(objecttype) %(objectname) %(objectsize) %(rest)' 2>/dev/null |
@@ -306,8 +314,8 @@ audit_phase_4() {
       phase_add_warning "4" "README.md may be missing section matching: $term"
     fi
   done
-  local placeholder_out="/tmp/go-public-placeholders.txt"
-  : > "$placeholder_out"
+  local placeholder_out
+  placeholder_out="$(mktemp)"
   if git grep -I -n -E '<this-repo>|YOUR_ORG|OWNER/REPO|TODO_PUBLIC|INSERT_|CHANGE_ME' -- \
       '*.md' '*.yaml' '*.yml' '*.json' >"$placeholder_out" 2>/dev/null; then
     local blocked=0 line path
@@ -320,10 +328,12 @@ audit_phase_4() {
       blocked=1
     done < "$placeholder_out"
     if [[ "$blocked" -eq 1 ]]; then
+      rm -f "$placeholder_out"
       phase_add_blocker "4" "Public documentation contains unresolved placeholders"
       return 1
     fi
   fi
+  rm -f "$placeholder_out"
   # Broken relative markdown links
   local link
   while IFS= read -r link; do

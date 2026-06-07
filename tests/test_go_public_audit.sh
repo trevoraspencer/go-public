@@ -88,6 +88,63 @@ test_report_absolute_path() {
   echo "PASS"
 }
 
+test_cli_options_override_config() {
+  echo "== test_cli_options_override_config =="
+  copy_fixture clean-go-repo
+  GO_PUBLIC_ROOT="$TMP/clean-go-repo" "$TOOL" audit --dry-run --phase 7 \
+    --history-strategy keep \
+    --public-branch cli-public \
+    --target-branch cli-main \
+    --report report.json
+  grep -q '"strategy": "keep"' report.json
+  grep -q '"public_branch": "cli-public"' report.json
+  grep -q '"target_branch": "cli-main"' report.json
+  echo "PASS"
+}
+
+test_adapter_functions_do_not_leak() {
+  echo "== test_adapter_functions_do_not_leak =="
+  local repo adapters
+  repo="$TMP/adapter-leak-repo"
+  adapters="$TMP/adapters"
+  mkdir -p "$repo" "$adapters"
+  cat >"$repo/go.mod" <<'EOF'
+module github.com/example/adapter-leak-repo
+
+go 1.22
+EOF
+  cat >"$repo/package.json" <<'EOF'
+{"name":"adapter-leak-repo"}
+EOF
+  cat >"$adapters/go.sh" <<'EOF'
+#!/usr/bin/env bash
+module_metadata_check() { return 0; }
+license_audit() { return 0; }
+lint() { return 0; }
+test() { printf 'go-test\n' >> "$GO_ADAPTER_TEST_COUNT"; return 0; }
+EOF
+  cat >"$adapters/node.sh" <<'EOF'
+#!/usr/bin/env bash
+module_metadata_check() { return 0; }
+license_audit() { return 0; }
+lint() { return 0; }
+EOF
+  cd "$repo"
+  git init -q
+  git config user.email "fixture@example.com"
+  git config user.name "Fixture"
+  git config commit.gpgsign false
+  git add -A
+  git commit -q -m "fixture initial"
+  GO_ADAPTER_TEST_COUNT="$repo/test-count" GO_PUBLIC_ROOT="$repo" GO_PUBLIC_ADAPTERS_DIR="$adapters" "$TOOL" audit --dry-run --phase 5 --report report.json
+  grep -q '"ci_readiness"' report.json
+  if [[ "$(wc -l < "$repo/test-count")" != "1" ]]; then
+    echo "Go adapter test function leaked into another adapter invocation" >&2
+    exit 1
+  fi
+  echo "PASS"
+}
+
 test_messy_go_blocks
 test_clean_go_passes
 test_history_secret_blocks
@@ -95,4 +152,6 @@ test_fix_apply_gitignore
 test_fix_phase_1_only
 test_history_dry_run
 test_report_absolute_path
+test_cli_options_override_config
+test_adapter_functions_do_not_leak
 echo "All go-public tests passed"
