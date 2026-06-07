@@ -12,6 +12,7 @@ copy_fixture() {
   git init -q
   git config user.email "fixture@example.com"
   git config user.name "Fixture"
+  git config commit.gpgsign false
   git add -A
   git commit -q -m "fixture initial"
 }

@@ -3,6 +3,7 @@
 
 run_history() {
   cd "$PROJECT_ROOT"
+  load_audit_policy
   audit_phase_0 || true
   if [[ "${PHASE_STATUS[1]:-}" != "pass" ]]; then
     audit_phase_1 || true
@@ -61,6 +62,7 @@ run_history() {
 run_publish() {
   [[ "$PUBLISH" -eq 1 && "$CONFIRM" -eq 1 ]] || die "publish requires --publish --confirm"
   cd "$PROJECT_ROOT"
+  load_audit_policy
   [[ "$(git branch --show-current)" == "$PUBLIC_BRANCH" ]] || die "Checkout $PUBLIC_BRANCH before publishing"
 
   audit_phase_1 || true

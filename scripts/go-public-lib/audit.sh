@@ -1,6 +1,70 @@
 #!/usr/bin/env bash
 # Phase audit implementations for go-public.
 
+AUDIT_EXCLUDE_PATHS=()
+SECRET_GREP_EXCLUDE_PATHS=()
+PLACEHOLDER_EXCLUDE_PATHS=()
+PERSONAL_PATH_EXCLUDE_PATHS=()
+
+yaml_list_values() {
+  local key="$1"
+  [[ -f "$CONFIG_FILE" ]] || return 0
+  awk -v key="$key" '
+    $0 ~ "^" key ":" { found=1; next }
+    found && /^[^[:space:]#-]/ { exit }
+    found && /^[[:space:]]+- / {
+      gsub(/^[[:space:]]+-[[:space:]]*/, "")
+      gsub(/"/, "")
+      print
+    }
+  ' "$CONFIG_FILE"
+}
+
+load_audit_policy() {
+  local item
+  AUDIT_EXCLUDE_PATHS=()
+  SECRET_GREP_EXCLUDE_PATHS=()
+  PLACEHOLDER_EXCLUDE_PATHS=()
+  PERSONAL_PATH_EXCLUDE_PATHS=()
+
+  while IFS= read -r item; do
+    [[ -n "$item" ]] && AUDIT_EXCLUDE_PATHS+=("$item")
+  done < <(yaml_list_values audit_exclude_paths)
+  while IFS= read -r item; do
+    [[ -n "$item" ]] && SECRET_GREP_EXCLUDE_PATHS+=("$item")
+  done < <(yaml_list_values secret_grep_exclude_paths)
+  while IFS= read -r item; do
+    [[ -n "$item" ]] && PLACEHOLDER_EXCLUDE_PATHS+=("$item")
+  done < <(yaml_list_values placeholder_exclude_paths)
+  while IFS= read -r item; do
+    [[ -n "$item" ]] && PERSONAL_PATH_EXCLUDE_PATHS+=("$item")
+  done < <(yaml_list_values personal_path_exclude_paths)
+}
+
+is_excluded_path() {
+  local file="$1"
+  shift
+  local prefix
+  for prefix in "$@"; do
+    [[ "$file" == "$prefix" || "$file" == "$prefix"* ]] && return 0
+  done
+  return 1
+}
+
+filtered_ls_files() {
+  local file
+  while IFS= read -r file; do
+    is_excluded_path "$file" "${AUDIT_EXCLUDE_PATHS[@]}" || printf '%s\n' "$file"
+  done < <(git ls-files)
+}
+
+git_grep_exclude_specs() {
+  local prefix
+  for prefix in "$@"; do
+    printf ':(exclude)%s\n' "${prefix%/}/**"
+  done
+}
+
 is_allowlisted_secret() {
   local match="$1"
   if [[ "$match" =~ sk-TEST-SENTINEL ]]; then
@@ -53,13 +117,14 @@ audit_phase_1() {
   fi
 
   log "Scanning full git history for high-confidence secret patterns"
-  local patterns='ghp_|github_pat_|sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|BEGIN (RSA |EC |OPENSSH |)?PRIVATE KEY|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}'
+  local patterns='ghp_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|BEGIN (RSA |EC |OPENSSH |)?PRIVATE KEY|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}'
   local grep_out="/tmp/go-public-secret-grep.txt"
+  local exclude_specs=()
+  mapfile -t exclude_specs < <(git_grep_exclude_specs "${SECRET_GREP_EXCLUDE_PATHS[@]}")
   : > "$grep_out"
   if git grep -I -n -E "$patterns" $(git rev-list --all) -- . \
       ':(exclude).git' \
-      ':(exclude)*test*' \
-      ':(exclude)*fixture*' >"$grep_out" 2>/dev/null; then
+      "${exclude_specs[@]}" >"$grep_out" 2>/dev/null; then
     local blocked=0
     while IFS= read -r line; do
       if is_allowlisted_secret "$line"; then
@@ -77,7 +142,7 @@ audit_phase_1() {
 
   log "Auditing tracked sensitive filenames"
   local sensitive_out="/tmp/go-public-sensitive-files.txt"
-  if git ls-files | grep -Ei '(^|/)(\.env|secrets\.env|id_rsa|id_ed25519|.*\.pem|.*\.key|.*\.p12|.*\.pfx|.*\.log)$' >"$sensitive_out"; then
+  if filtered_ls_files | grep -Ei '(^|/)(\.env|secrets\.env|id_rsa|id_ed25519|.*\.pem|.*\.key|.*\.p12|.*\.pfx|.*\.log)$' >"$sensitive_out"; then
     cat "$sensitive_out" >&2
     phase_add_blocker "1" "Sensitive-looking files are tracked"
     phase_failed=1
@@ -116,16 +181,27 @@ audit_phase_3() {
   cd "$PROJECT_ROOT"
   local internal_regex='(^|/)(\.factory|\.cursor/plans|notes|scratch|tmp|TODO_private\.md|IMPLEMENTATION_PLAN\.md|LIVE_E2E_PLAN\.md)(/|$)'
   local internal_out="/tmp/go-public-internal-files.txt"
-  if git ls-files | grep -E "$internal_regex" >"$internal_out"; then
+  if filtered_ls_files | grep -E "$internal_regex" >"$internal_out"; then
     cat "$internal_out" >&2
     phase_add_blocker "3" "Internal artifacts remain tracked"
     return 1
   fi
   local paths_out="/tmp/go-public-personal-paths.txt"
+  : > "$paths_out"
   if git grep -I -n -E '/Users/|/home/[A-Za-z0-9._-]+|C:\\Users\\' -- . >"$paths_out" 2>/dev/null; then
-    cat "$paths_out" >&2
-    phase_add_blocker "3" "Personal or machine-specific paths found"
-    return 1
+    local blocked=0 line path
+    while IFS= read -r line; do
+      path="${line%%:*}"
+      if is_excluded_path "$path" "${PERSONAL_PATH_EXCLUDE_PATHS[@]}"; then
+        continue
+      fi
+      printf '%s\n' "$line" >&2
+      blocked=1
+    done < "$paths_out"
+    if [[ "$blocked" -eq 1 ]]; then
+      phase_add_blocker "3" "Personal or machine-specific paths found"
+      return 1
+    fi
   fi
   log "Large blobs in history, top 20:"
   git rev-list --objects --all 2>/dev/null |
@@ -160,9 +236,23 @@ audit_phase_4() {
       phase_add_warning "4" "README.md may be missing section matching: $term"
     fi
   done
-  if git grep -I -n -E '<this-repo>|YOUR_ORG|TODO_PUBLIC|INSERT_|CHANGE_ME' -- '*.md' '*.yaml' '*.yml' '*.json' 2>/dev/null; then
-    phase_add_blocker "4" "Public documentation contains unresolved placeholders"
-    return 1
+  local placeholder_out="/tmp/go-public-placeholders.txt"
+  : > "$placeholder_out"
+  if git grep -I -n -E '<this-repo>|YOUR_ORG|TODO_PUBLIC|INSERT_|CHANGE_ME' -- \
+      '*.md' '*.yaml' '*.yml' '*.json' >"$placeholder_out" 2>/dev/null; then
+    local blocked=0 line path
+    while IFS= read -r line; do
+      path="${line%%:*}"
+      if is_excluded_path "$path" "${PLACEHOLDER_EXCLUDE_PATHS[@]}"; then
+        continue
+      fi
+      printf '%s\n' "$line" >&2
+      blocked=1
+    done < "$placeholder_out"
+    if [[ "$blocked" -eq 1 ]]; then
+      phase_add_blocker "4" "Public documentation contains unresolved placeholders"
+      return 1
+    fi
   fi
   # Broken relative markdown links
   local link
@@ -257,6 +347,7 @@ audit_phase_9() {
 }
 
 run_audit_phases() {
+  load_audit_policy
   write_report_stub
   local phases=(audit_phase_0 audit_phase_1 audit_phase_2 audit_phase_3 audit_phase_4 audit_phase_5 audit_phase_6 audit_phase_7 audit_phase_8 audit_phase_9)
   local i=0
@@ -273,6 +364,7 @@ run_audit_phases() {
 }
 
 run_preflight_phases() {
+  load_audit_policy
   write_report_stub
   audit_phase_0 || true
   audit_phase_1 || true

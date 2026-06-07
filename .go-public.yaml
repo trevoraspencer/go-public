@@ -84,3 +84,20 @@ docs:
 github:
   emit_settings_checklist: true
   mutate_visibility: false
+audit_exclude_paths:
+  - fixtures/
+secret_grep_exclude_paths:
+  - fixtures/
+  - scripts/go-public-lib/
+  - .go-public.yaml
+  - .cursor/
+  - .gitleaks.toml
+  - tests/
+placeholder_exclude_paths:
+  - fixtures/
+  - .go-public.yaml
+  - .cursor/
+personal_path_exclude_paths:
+  - fixtures/
+  - .go-public.yaml
+  - scripts/go-public-lib/
