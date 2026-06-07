@@ -1,0 +1,25 @@
+---
+description: >-
+  go-public workflow — convert a private, messy repository into a public-ready
+  open-source release. Triggers on "go public", "open source this", "make this repo
+  public", "orphan branch release", "clean this repo for GitHub public", or similar.
+alwaysApply: false
+---
+
+# go-public (Cursor rule)
+
+The full go-public workflow, phase decision tree, safety rules, and required commands are
+maintained once, in the canonical **[AGENTS.md](../../AGENTS.md)** at the repository root.
+Read it before acting — this rule is a thin pointer so the procedure stays identical
+across every agent.
+
+Start with:
+
+```bash
+scripts/go-public audit --dry-run --report go-public-report.json
+```
+
+`scripts/go-public` owns the gates. Dry-run is the default; mutations require `--apply`
+or `--apply-history`; remote pushes require `publish --confirm`. Always scan full git
+history for secrets and never claim credentials were rotated. See `AGENTS.md` for
+everything else.

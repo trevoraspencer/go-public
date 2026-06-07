@@ -1,4 +1,7 @@
-.cursor/skills/go-public/SKILL.md
+AGENTS.md
+CLAUDE.md
+.claude/skills/go-public/SKILL.md
+.cursor/rules/go-public.mdc
 scripts/go-public
 scripts/go-public-lib/common.sh
 scripts/go-public-lib/git.sh

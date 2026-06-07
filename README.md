@@ -1,8 +1,22 @@
 # go-public
 
-Portable tooling and a Cursor skill for converting a private repository into a public-ready open-source release.
+Portable, agent-agnostic tooling for converting a private repository into a public-ready open-source release.
 
-The **skill** (`.cursor/skills/go-public/SKILL.md`) gives agents workflow discipline and judgment. The **script** (`scripts/go-public`) owns repeatable gates, dry-runs, reports, and CI-usable checks.
+The **agent guide** (`AGENTS.md`) gives coding agents workflow discipline and judgment. The **script** (`scripts/go-public`) owns repeatable gates, dry-runs, reports, and CI-usable checks.
+
+## Supported agents
+
+The workflow is maintained once, in the canonical [`AGENTS.md`](AGENTS.md), which is read natively by most coding agents. Agents with a different convention get a thin pointer file that defers to it — single source of truth, no drift.
+
+| Agent | Entry point |
+|-------|-------------|
+| Codex | `AGENTS.md` |
+| Cursor | `.cursor/rules/go-public.mdc` → `AGENTS.md` |
+| Factory Droid | `AGENTS.md` |
+| Grok build | `AGENTS.md` |
+| Claude Code | `CLAUDE.md` + `.claude/skills/go-public/SKILL.md` → `AGENTS.md` |
+
+Adding another agent means adding one pointer file that references `AGENTS.md` — never forking the workflow.
 
 ## Install into an empty repo
 
@@ -10,10 +24,10 @@ Drop `setup-go-public-skill.sh` into the repo root and run:
 
 ```bash
 bash setup-go-public-skill.sh
-git add -A && git commit -m "Add go-public skill"
+git add -A && git commit -m "Add go-public tooling"
 ```
 
-The installer embeds all operational files as base64 (byte-identical to this repo's sources). It sets `+x` on `scripts/go-public` and touches nothing else — no git, remote, or network. Portable on Linux (`base64 -d`) and macOS (`base64 -D`).
+The installer embeds all operational files as base64 (byte-identical to this repo's sources), including the agent guides (`AGENTS.md`, `CLAUDE.md`, and the per-agent pointer files). It sets `+x` on `scripts/go-public` and touches nothing else — no git, remote, or network. Portable on Linux (`base64 -d`) and macOS (`base64 -D`).
 
 **Handoff vs installer:** `docs/HANDOFF.md` is context for a fresh agent chat (design, safety, where you left off). The installer writes the actual files. Use both when bootstrapping: run the installer for repo contents, paste the handoff when continuing in a new session.
 
@@ -52,7 +66,10 @@ scripts/go-public publish --confirm --public-branch public-main --target-branch 
 ## Architecture
 
 ```
-.cursor/skills/go-public/SKILL.md   # Agent workflow and safety rules
+AGENTS.md                           # Canonical agent workflow and safety rules
+CLAUDE.md                           # Claude Code pointer to AGENTS.md
+.claude/skills/go-public/SKILL.md   # Claude Code Agent Skill (defers to AGENTS.md)
+.cursor/rules/go-public.mdc         # Cursor project rule (defers to AGENTS.md)
 scripts/go-public                   # CLI orchestrator
 scripts/go-public-lib/            # Phase logic, report, git helpers
 adapters/                         # Stack-specific test/license hooks
